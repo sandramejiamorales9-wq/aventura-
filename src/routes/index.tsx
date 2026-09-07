@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Compass, Leaf, Backpack, BookOpen, CloudRain, Sun, Moon, ArrowRight, Lock, Map, LocateFixed, ZoomIn, ZoomOut, Sparkles, ShieldCheck } from 'lucide-react'
+import { Compass, Leaf, Backpack, BookOpen, CloudRain, Sun, Moon, ArrowRight, Lock, Map, LocateFixed, ZoomIn, ZoomOut, Sparkles, ShieldCheck, Share2, Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { blink } from '@/blink/client'
 import type { AdventureProgressRow } from '@/lib/db-types'
@@ -53,6 +53,8 @@ function Home() {
   const [authLoading, setAuthLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     const unsubscribe = blink.auth.onAuthStateChanged((state) => {
@@ -130,13 +132,52 @@ function Home() {
     document.getElementById('expeditions')?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  const shareText = `He llegado a ${chapters[activeChapter].title} en Aventura Quest. Llevo ${usedObjects.length} objetos utilizados en mi expedición. ¿Te atreves a explorar la selva?`
+  const shareUrl = typeof window === 'undefined' ? '' : window.location.href
+
+  const shareProgress = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Mi expedición en Aventura Quest', text: shareText, url: shareUrl })
+        toast.success('Progreso compartido')
+      } catch (error) {
+        if (error instanceof Error && error.name !== 'AbortError') toast.error('No se pudo compartir el progreso')
+      }
+      return
+    }
+    await copyShareLink()
+  }
+
+  const copyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${shareText} ${shareUrl}`)
+      setCopied(true)
+      toast.success('Resumen copiado', { description: 'Ya puedes pegarlo en cualquier red social.' })
+      window.setTimeout(() => setCopied(false), 2200)
+    } catch {
+      toast.error('No se pudo copiar el resumen')
+    }
+  }
+
+  const openSocialShare = (network: 'whatsapp' | 'x' | 'facebook') => {
+    const encodedText = encodeURIComponent(shareText)
+    const encodedUrl = encodeURIComponent(shareUrl)
+    const targets = {
+      whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+      x: `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+    }
+    window.open(targets[network], '_blank', 'noopener,noreferrer')
+    setShareOpen(false)
+  }
+
   return (
     <main className="min-h-dvh overflow-hidden bg-background text-foreground">
       <nav className="fixed inset-x-0 top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-10">
           <a href="#top" className="flex items-center gap-3 text-sm font-bold tracking-[0.16em] text-primary"><span className="grid size-8 place-items-center rounded-full border border-primary/50"><Compass className="size-4" /></span> AVENTURA QUEST</a>
           <div className="hidden items-center gap-8 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:flex"><a href="#expeditions" className="transition-colors hover:text-primary">Expediciones</a><a href="#objects" className="transition-colors hover:text-primary">Objetos</a><a href="#journal" className="transition-colors hover:text-primary">Diario</a></div>
-          <div className="flex items-center gap-3"><button onClick={saveProgress} disabled={isSaving || authLoading} className="hidden rounded-full border border-primary/50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50 sm:block">{isSaving ? 'Guardando…' : 'Guardar partida'}</button><button onClick={continueAdventure} className="rounded-full bg-primary px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground transition-transform hover:scale-105 active:scale-95">Jugar ahora</button></div>
+          <div className="flex items-center gap-3"><button onClick={shareProgress} className="hidden items-center gap-2 rounded-full border border-primary/50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground sm:flex"><Share2 className="size-3.5" /> Compartir</button><button onClick={saveProgress} disabled={isSaving || authLoading} className="hidden rounded-full border border-primary/50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50 sm:block">{isSaving ? 'Guardando…' : 'Guardar partida'}</button><button onClick={continueAdventure} className="rounded-full bg-primary px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground transition-transform hover:scale-105 active:scale-95">Jugar ahora</button></div>
         </div>
       </nav>
 
@@ -150,7 +191,7 @@ function Home() {
             <p className="mb-6 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.28em] text-primary"><span className="h-px w-10 bg-primary" /> Una aventura de exploración narrativa</p>
             <h1 className="font-serif text-[clamp(4rem,11vw,9.5rem)] leading-[0.86] tracking-[-0.06em] text-foreground">La selva<br /><em className="text-primary">te llama.</em></h1>
             <p className="mt-8 max-w-lg text-base leading-relaxed text-muted-foreground lg:text-lg">Un mundo abierto de ruinas olvidadas, senderos que cambian con el clima y secretos que solo aparecen cuando te atreves a mirar más de cerca.</p>
-            <div className="mt-9 flex flex-wrap items-center gap-4"><button onClick={continueAdventure} className="group flex items-center gap-3 rounded-full bg-primary px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/10 transition-all hover:-translate-y-1 hover:shadow-primary/25 active:translate-y-0">{userId ? 'Continuar expedición' : 'Comenzar expedición'} <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></button><button onClick={saveProgress} disabled={isSaving || authLoading} className="rounded-full border border-primary/50 px-5 py-3 text-sm font-bold text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50">{isSaving ? 'Guardando…' : 'Guardar progreso'}</button><span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{lastSaved ? `Guardado ${new Date(lastSaved).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Sin prisa · Sin caminos correctos'}</span></div>
+            <div className="mt-9 flex flex-wrap items-center gap-4"><button onClick={continueAdventure} className="group flex items-center gap-3 rounded-full bg-primary px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/10 transition-all hover:-translate-y-1 hover:shadow-primary/25 active:translate-y-0">{userId ? 'Continuar expedición' : 'Comenzar expedición'} <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></button><button onClick={saveProgress} disabled={isSaving || authLoading} className="rounded-full border border-primary/50 px-5 py-3 text-sm font-bold text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50">{isSaving ? 'Guardando…' : 'Guardar progreso'}</button><button onClick={() => setShareOpen((open) => !open)} className="flex items-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-bold text-muted-foreground transition-all hover:border-primary/60 hover:text-primary"><Share2 className="size-4" /> Compartir</button><span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{lastSaved ? `Guardado ${new Date(lastSaved).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Sin prisa · Sin caminos correctos'}</span></div>{shareOpen && <div className="mt-4 flex max-w-xl flex-wrap items-center gap-2 rounded-2xl border border-primary/30 bg-card/90 p-3 shadow-lg backdrop-blur-sm"><span className="mr-2 w-full text-xs text-muted-foreground sm:w-auto">Comparte tu avance:</span><button onClick={shareProgress} className="flex items-center gap-2 rounded-full bg-primary px-3 py-2 text-xs font-bold text-primary-foreground"><Share2 className="size-3.5" /> Compartir</button><button onClick={() => openSocialShare('whatsapp')} className="rounded-full border border-border px-3 py-2 text-xs font-bold transition-colors hover:border-primary hover:text-primary">WhatsApp</button><button onClick={() => openSocialShare('x')} className="rounded-full border border-border px-3 py-2 text-xs font-bold transition-colors hover:border-primary hover:text-primary">X / Twitter</button><button onClick={() => openSocialShare('facebook')} className="rounded-full border border-border px-3 py-2 text-xs font-bold transition-colors hover:border-primary hover:text-primary">Facebook</button><button onClick={copyShareLink} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-xs font-bold transition-colors hover:border-primary hover:text-primary">{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />} {copied ? 'Copiado' : 'Copiar'}</button></div>}
           </div>
           <div className="relative hidden min-h-[390px] lg:block">
             <div className="absolute right-8 top-3 h-80 w-56 rotate-6 rounded-[45%_45%_12%_12%] border border-primary/30 bg-gradient-to-br from-emerald-700/40 via-emerald-950/70 to-background shadow-2xl shadow-emerald-950/60" />
