@@ -1,6 +1,16 @@
 // Auto-generated from your database schema — do not edit by hand.
 // Regenerates automatically whenever a table is created or altered.
 
+export type AdventureProgressRow = {
+  id: string
+  userId: string
+  gameId: string
+  activeChapter: number | string
+  weatherIndex: number | string
+  usedObjects: string
+  updatedAt: string
+}
+
 export type UsersRow = {
   id: string
   email: string

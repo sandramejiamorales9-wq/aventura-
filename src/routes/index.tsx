@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Compass, Leaf, Backpack, BookOpen, CloudRain, Sun, Moon, ArrowRight, Lock, Map, LocateFixed, ZoomIn, ZoomOut, Sparkles, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
+import { blink } from '@/blink/client'
+import type { AdventureProgressRow } from '@/lib/db-types'
+
+const progressTable = blink.db.table<AdventureProgressRow>('adventure_progress')
 
 const mapPoints = [
   { id: 'camp', label: 'Campamento base', type: 'Inicio', x: '18%', y: '66%', chapter: 0, description: 'Tu refugio entre helechos gigantes. Aquí comienza cada expedición.' },
@@ -45,6 +49,30 @@ function Home() {
   const [weatherIndex, setWeatherIndex] = useState(0)
   const [started, setStarted] = useState(false)
   const [usedObjects, setUsedObjects] = useState<string[]>([])
+  const [userId, setUserId] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [lastSaved, setLastSaved] = useState<string | null>(null)
+
+  useEffect(() => {
+    const unsubscribe = blink.auth.onAuthStateChanged((state) => {
+      setUserId(state.user?.id ?? null)
+      if (!state.isLoading) setAuthLoading(false)
+    })
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    if (!userId) return
+    progressTable.list({ where: { userId, gameId: 'aventura-quest' }, limit: 1 }).then((rows) => {
+      const progress = rows[0]
+      if (!progress) return
+      setActiveChapter(Number(progress.activeChapter))
+      setWeatherIndex(Number(progress.weatherIndex))
+      try { setUsedObjects(JSON.parse(progress.usedObjects || '[]')) } catch { setUsedObjects([]) }
+      setLastSaved(progress.updatedAt)
+    }).catch(() => toast.error('No se pudo cargar tu progreso'))
+  }, [userId])
 
   useEffect(() => {
     const onScroll = () => {
@@ -67,13 +95,48 @@ function Home() {
     toast.success(`${object.name} utilizada`, { description: object.description })
   }
 
+  const saveProgress = async () => {
+    if (!userId) {
+      blink.auth.login(window.location.href)
+      return
+    }
+    setIsSaving(true)
+    try {
+      const now = new Date().toISOString()
+      await progressTable.upsert({
+        id: `${userId}_aventura-quest`,
+        userId,
+        gameId: 'aventura-quest',
+        activeChapter,
+        weatherIndex,
+        usedObjects: JSON.stringify(usedObjects),
+        updatedAt: now,
+      })
+      setLastSaved(now)
+      toast.success('Progreso guardado', { description: 'Tu expedición continuará desde aquí.' })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar el progreso')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const continueAdventure = () => {
+    if (!userId) {
+      toast('Inicia sesión para guardar tu aventura', { description: 'Tu progreso se guardará automáticamente en tu cuenta.' })
+      blink.auth.login(window.location.href)
+      return
+    }
+    document.getElementById('expeditions')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   return (
     <main className="min-h-dvh overflow-hidden bg-background text-foreground">
       <nav className="fixed inset-x-0 top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-10">
           <a href="#top" className="flex items-center gap-3 text-sm font-bold tracking-[0.16em] text-primary"><span className="grid size-8 place-items-center rounded-full border border-primary/50"><Compass className="size-4" /></span> AVENTURA QUEST</a>
           <div className="hidden items-center gap-8 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:flex"><a href="#expeditions" className="transition-colors hover:text-primary">Expediciones</a><a href="#objects" className="transition-colors hover:text-primary">Objetos</a><a href="#journal" className="transition-colors hover:text-primary">Diario</a></div>
-          <button onClick={beginAdventure} className="rounded-full bg-primary px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground transition-transform hover:scale-105 active:scale-95">Jugar ahora</button>
+          <div className="flex items-center gap-3"><button onClick={saveProgress} disabled={isSaving || authLoading} className="hidden rounded-full border border-primary/50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50 sm:block">{isSaving ? 'Guardando…' : 'Guardar partida'}</button><button onClick={continueAdventure} className="rounded-full bg-primary px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground transition-transform hover:scale-105 active:scale-95">Jugar ahora</button></div>
         </div>
       </nav>
 
@@ -87,7 +150,7 @@ function Home() {
             <p className="mb-6 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.28em] text-primary"><span className="h-px w-10 bg-primary" /> Una aventura de exploración narrativa</p>
             <h1 className="font-serif text-[clamp(4rem,11vw,9.5rem)] leading-[0.86] tracking-[-0.06em] text-foreground">La selva<br /><em className="text-primary">te llama.</em></h1>
             <p className="mt-8 max-w-lg text-base leading-relaxed text-muted-foreground lg:text-lg">Un mundo abierto de ruinas olvidadas, senderos que cambian con el clima y secretos que solo aparecen cuando te atreves a mirar más de cerca.</p>
-            <div className="mt-9 flex flex-wrap items-center gap-4"><button onClick={beginAdventure} className="group flex items-center gap-3 rounded-full bg-primary px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/10 transition-all hover:-translate-y-1 hover:shadow-primary/25 active:translate-y-0">Comenzar expedición <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></button><span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Sin prisa · Sin caminos correctos</span></div>
+            <div className="mt-9 flex flex-wrap items-center gap-4"><button onClick={continueAdventure} className="group flex items-center gap-3 rounded-full bg-primary px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/10 transition-all hover:-translate-y-1 hover:shadow-primary/25 active:translate-y-0">{userId ? 'Continuar expedición' : 'Comenzar expedición'} <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></button><button onClick={saveProgress} disabled={isSaving || authLoading} className="rounded-full border border-primary/50 px-5 py-3 text-sm font-bold text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50">{isSaving ? 'Guardando…' : 'Guardar progreso'}</button><span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{lastSaved ? `Guardado ${new Date(lastSaved).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Sin prisa · Sin caminos correctos'}</span></div>
           </div>
           <div className="relative hidden min-h-[390px] lg:block">
             <div className="absolute right-8 top-3 h-80 w-56 rotate-6 rounded-[45%_45%_12%_12%] border border-primary/30 bg-gradient-to-br from-emerald-700/40 via-emerald-950/70 to-background shadow-2xl shadow-emerald-950/60" />
@@ -105,7 +168,7 @@ function Home() {
 
       <section id="journal" className="relative border-t border-border bg-secondary/30 px-5 py-24 lg:px-10 lg:py-32"><div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.85fr_1fr] lg:items-center"><div><p className="mb-4 font-mono text-xs uppercase tracking-[0.24em] text-primary">/ El diario del explorador</p><h2 className="font-serif text-4xl leading-tight lg:text-6xl">No coleccionas<br /><em className="text-primary">objetos.</em><br />Coleccionas señales.</h2><p className="mt-7 max-w-md text-muted-foreground">Tu inventario cuenta lo que has visto. Una pluma, una coordenada, una frase a medias. Lo pequeño puede abrir la puerta más grande.</p><button onClick={() => toast('El diario se desbloquea al encontrar tu primera reliquia')} className="mt-8 flex items-center gap-3 text-sm font-bold text-primary transition-transform hover:translate-x-1">Ver cómo funciona <BookOpen className="size-4" /></button></div><div className="grid grid-cols-2 gap-4"><div className="col-span-2 rounded-2xl border border-border bg-card p-6 shadow-md"><div className="flex items-center justify-between"><Backpack className="size-6 text-primary" /><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Inventario · 03/12</span></div><div className="mt-8 flex gap-3"><div className="grid size-16 place-items-center rounded-xl border border-primary/30 bg-primary/10"><Leaf className="size-7 text-primary" /></div><div><p className="font-serif text-xl">Hoja de Yara</p><p className="mt-1 text-xs text-muted-foreground">Se mueve incluso cuando no hay viento.</p></div></div></div><div className="rounded-2xl border border-border bg-card p-5"><Sparkles className="size-5 text-primary" /><p className="mt-10 font-serif text-2xl">17</p><p className="mt-1 text-xs text-muted-foreground">señales encontradas</p></div><div className="rounded-2xl border border-border bg-card p-5"><ShieldCheck className="size-5 text-primary" /><p className="mt-10 font-serif text-2xl">01</p><p className="mt-1 text-xs text-muted-foreground">decisión pendiente</p></div></div></div></section>
 
-      <footer className="border-t border-border px-5 py-8 lg:px-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 text-xs text-muted-foreground md:flex-row md:items-center"><p className="font-mono uppercase tracking-widest">Aventura Quest · Temporada uno</p><p>{started ? 'Expedición activa · Guarda tu progreso en el diario' : 'Una historia que se descubre caminando'}</p></div></footer>
+      <footer className="border-t border-border px-5 py-8 lg:px-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 text-xs text-muted-foreground md:flex-row md:items-center"><p className="font-mono uppercase tracking-widest">Aventura Quest · Temporada uno</p><p>{started ? 'Expedición activa · Guarda tu progreso en el diario' : userId ? 'Partida sincronizada · Lista para continuar' : 'Una historia que se descubre caminando'}</p></div></footer>
     </main>
   )
 }
